@@ -15,10 +15,21 @@ struct x264_param_t;
 struct X264APIDeleter {
 	void operator()(x264_t* pContext) {
 		if (pContext != nullptr) {
+			g_Log(logLevelInfo, "X264 Plugin :: X264APIDeleter :: closing pContext");
 			x264_encoder_close(pContext);
 		}
 	}
 };
+
+static void x264_my_log(void* p_unused, int i_level, const char* psz_fmt, va_list arg)
+{
+	char buffer[1024];
+
+	vsprintf_s(buffer, 1024, psz_fmt, arg);
+
+	g_Log(logLevelInfo, "X264 Library :: %s", buffer);
+}
+
 
 class X264Encoder : public IPluginCodecRef
 {

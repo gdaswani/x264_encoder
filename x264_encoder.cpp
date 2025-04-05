@@ -104,6 +104,7 @@ X264Encoder::X264Encoder(int iProfile, int iColorModel)
 
 X264Encoder::~X264Encoder()
 {
+	m_pContext.reset();
 
 	if (m_IsMultiPass && (m_PassesDone > 1)) {
 
@@ -113,17 +114,21 @@ X264Encoder::~X264Encoder()
 		sTmpFNMBTree.append(".mbtree");
 
 		std::filesystem::remove(sTmpFNMBTree);
-	}
 
+	}
 }
 
 StatusCode X264Encoder::DoInit(HostPropertyCollectionRef* p_pProps)
 {
+	g_Log(logLevelInfo, "X264 Plugin :: DoInit");
+
 	return errNone;
 }
 
 StatusCode X264Encoder::DoOpen(HostBufferRef* p_pBuff)
 {
+	g_Log(logLevelInfo, "X264 Plugin :: DoOpen");
+
 	assert(m_pContext == nullptr);
 
 	m_CommonProps.Load(p_pBuff);
@@ -133,7 +138,7 @@ StatusCode X264Encoder::DoOpen(HostBufferRef* p_pBuff)
 	assert(!path.empty());
 
 	m_TmpFileName = path;
-	m_TmpFileName.append(".pass.log");
+	m_TmpFileName.append(".pass");
 
 	m_pSettings.reset(new UISettingsController(m_CommonProps));
 	m_pSettings->Load(p_pBuff);
@@ -194,11 +199,14 @@ StatusCode X264Encoder::DoOpen(HostBufferRef* p_pBuff)
 
 void X264Encoder::SetupContext(bool p_IsFinalPass)
 {
+	m_pContext.reset();
+
 	x264_param_t param;
 
 	const char* pProfile = x264_profile_names[GetProfile()];
 
 	g_Log(logLevelInfo, "X264 Plugin :: SetupContext :: pProfile = %s", pProfile);
+	g_Log(logLevelInfo, "X264 Plugin :: SetupContext :: p_IsFinalPass = %d", p_IsFinalPass);
 
 	x264_param_default_preset(&param, m_pSettings->GetEncPreset(), m_pSettings->GetTune());
 	param.i_csp = GetColorModel();
@@ -215,6 +223,9 @@ void X264Encoder::SetupContext(bool p_IsFinalPass)
 	param.b_stitchable = 1;
 	param.vui.b_fullrange = m_CommonProps.IsFullRange();
 
+	param.i_log_level = X264_LOG_ERROR;
+	param.pf_log = x264_my_log;
+
 	if (strcmp(pProfile, "baseline") != 0) {
 		const uint8_t fieldOrder = m_CommonProps.GetFieldOrder();
 		param.b_interlaced = ((fieldOrder == fieldTop) || (fieldOrder == fieldBottom));
@@ -222,12 +233,16 @@ void X264Encoder::SetupContext(bool p_IsFinalPass)
 
 	param.rc.i_rc_method = m_pSettings->GetQualityMode();
 	if (!m_IsMultiPass && (param.rc.i_rc_method != X264_RC_ABR)) {
+
 		const int qp = m_pSettings->GetQP();
 
 		param.rc.i_qp_constant = qp;
 		param.rc.f_rf_constant = static_cast<float>(std::min<int>(50, qp));
 		param.rc.f_rf_constant_max = static_cast<float>(std::min<int>(51, qp + 5));
 	} else if (param.rc.i_rc_method == X264_RC_ABR) {
+
+		g_Log(logLevelInfo, "X264 Plugin :: SetupContext :: X264_RC_ABR :: bitRate = %d", m_pSettings->GetBitRate());
+
 		param.rc.i_bitrate = m_pSettings->GetBitRate();
 		param.rc.i_vbv_buffer_size = m_pSettings->GetBitRate();
 		param.rc.i_vbv_max_bitrate = m_pSettings->GetBitRate();
@@ -236,14 +251,18 @@ void X264Encoder::SetupContext(bool p_IsFinalPass)
 	if (m_IsMultiPass) {
 
 		if (p_IsFinalPass && (m_PassesDone > 0)) {
-			param.rc.psz_stat_in = &m_TmpFileName[0];
 			param.rc.b_stat_read = 1;
 			param.rc.b_stat_write = 0;
+			param.rc.psz_stat_in = &m_TmpFileName[0];
 			x264_param_apply_fastfirstpass(&param);
+
+			g_Log(logLevelInfo, "X264 Plugin :: SetupContext :: psz_stat_in = %s", param.rc.psz_stat_in);
 		} else if (!p_IsFinalPass) {
+
 			param.rc.b_stat_read = 0;
 			param.rc.b_stat_write = 1;
 			param.rc.psz_stat_out = &m_TmpFileName[0];
+			g_Log(logLevelInfo, "X264 Plugin :: SetupContext :: psz_stat_out = %s", param.rc.psz_stat_out);
 		}
 
 	}
@@ -260,16 +279,20 @@ void X264Encoder::SetupContext(bool p_IsFinalPass)
 
 	x264_t* pContext = x264_encoder_open(&param);
 
+	g_Log(logLevelInfo, "X264 Plugin :: SetupContext :: pContext = %d", pContext);
+
 	if (pContext != NULL) {
 		m_pContext.reset(pContext);
 		m_Error = errNone;
 	} else {
+		g_Log(logLevelInfo, "X264 Plugin :: SetupContext :: m_Error = errFail");
 		m_Error = errFail;
 	}
 }
 
 StatusCode X264Encoder::DoProcess(HostBufferRef* p_pBuff)
 {
+
 	assert(m_ColorModel == X264_CSP_NV12);
 
 	if (m_Error != errNone) {
@@ -332,6 +355,8 @@ StatusCode X264Encoder::DoProcess(HostBufferRef* p_pBuff)
 		// move past Y data
 		uvSrc += (width * height);
 
+		p_pBuff->UnlockBuffer();
+
 		inPic.img.i_plane = 2;
 		inPic.img.i_stride[0] = width;
 		inPic.img.plane[0] = pSrc;
@@ -339,8 +364,6 @@ StatusCode X264Encoder::DoProcess(HostBufferRef* p_pBuff)
 		inPic.img.plane[1] = uvSrc;
 
 		bytes = x264_encoder_encode(m_pContext.get(), &pNals, &numNals, &inPic, &outPic);
-
-		p_pBuff->UnlockBuffer();
 
 	}
 
@@ -379,6 +402,7 @@ StatusCode X264Encoder::DoProcess(HostBufferRef* p_pBuff)
 
 void X264Encoder::DoFlush()
 {
+	g_Log(logLevelInfo, "X264 Plugin :: DoFlush");
 
 	if (m_Error != errNone) {
 		return;
@@ -390,6 +414,9 @@ void X264Encoder::DoFlush()
 	}
 
 	++m_PassesDone;
+
+	g_Log(logLevelInfo, "X264 Plugin :: DoFlush :: m_PassesDone = %d", m_PassesDone);
+
 
 	if (!m_IsMultiPass || (m_PassesDone > 1)) {
 		return;
