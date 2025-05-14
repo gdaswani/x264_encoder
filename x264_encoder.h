@@ -25,7 +25,7 @@ static void x264_my_log(void* p_unused, int i_level, const char* psz_fmt, va_lis
 {
 	char buffer[1024];
 
-	vsprintf_s(buffer, 1024, psz_fmt, arg);
+	vsnprintf(buffer, 1024, psz_fmt, arg);
 
 	g_Log(logLevelInfo, "X264 Library :: %s", buffer);
 }
