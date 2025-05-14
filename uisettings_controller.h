@@ -16,6 +16,7 @@ namespace IOPlugin {
 		~UISettingsController();
 		void Load(IPropertyProvider* p_pValues);
 		StatusCode Render(HostListRef* p_pSettingsList);
+		static const char* const s_ENCODER_LEVELS[];
 
 	private:
 		void InitDefaults();
@@ -41,6 +42,11 @@ namespace IOPlugin {
 			}
 
 			return NULL;
+		}
+
+		const char* GetLevel() const
+		{
+			return s_ENCODER_LEVELS[m_Level];
 		}
 
 		int32_t GetQualityMode() const
@@ -76,6 +82,7 @@ namespace IOPlugin {
 		int32_t m_QualityMode;
 		int32_t m_QP;
 		int32_t m_BitRate;
+		int32_t m_Level;
 	};
 
 }

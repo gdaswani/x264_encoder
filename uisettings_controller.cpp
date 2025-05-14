@@ -3,6 +3,8 @@
 #include <assert.h>
 #include <sstream>
 
+const char* const  UISettingsController::s_ENCODER_LEVELS[] = { "-1", "4.0", "4.1", "4.2", "5", "5.1", "5.2", "6", "6.1", "6.2", 0 };
+
 UISettingsController::UISettingsController() {
 	InitDefaults();
 }
@@ -33,6 +35,7 @@ void UISettingsController::Load(IPropertyProvider* p_pValues)
 	p_pValues->GetINT32("x264_qp", m_QP);
 	p_pValues->GetINT32("x264_bitrate", m_BitRate);
 	p_pValues->GetString("x264_enc_markers", m_MarkerColor);
+	p_pValues->GetINT32("x264_level", m_Level);
 }
 
 StatusCode UISettingsController::Render(HostListRef* p_pSettingsList)
@@ -74,6 +77,7 @@ void UISettingsController::InitDefaults()
 	m_EncPreset = 4;
 	m_Tune = 0;
 	m_NumPasses = 1;
+	m_Level = 0;
 	m_QualityMode = X264_RC_CRF;
 	m_QP = 23;
 	m_BitRate = 8000;
@@ -100,6 +104,34 @@ StatusCode UISettingsController::RenderGeneral(HostListRef* p_pSettingsList)
 		if (!item.IsSuccess() || !p_pSettingsList->Append(&item)) {
 			g_Log(logLevelError, "X264 Plugin :: Failed to populate encoder preset UI entry");
 			assert(false);
+			return errFail;
+		}
+	}
+
+
+	// Level combobox
+	{
+		HostUIConfigEntryRef item("x264_level");
+
+		std::vector<std::string> textsVec;
+		std::vector<int> valuesVec;
+
+		int32_t curVal = 0;
+		const char* const* pLevels = s_ENCODER_LEVELS;
+		while (*pLevels != 0) {
+			if (curVal == 0) {
+				textsVec.push_back("Auto");
+			} else {
+				textsVec.push_back(*pLevels);
+			}
+			++pLevels;
+
+			valuesVec.push_back(curVal++);
+		}
+
+		item.MakeComboBox("Encoder Level", textsVec, valuesVec, m_Level);
+		if (!item.IsSuccess() || !p_pSettingsList->Append(&item)) {
+			g_Log(logLevelError, "X264 Plugin :: Failed to populate encoder level UI entry");
 			return errFail;
 		}
 	}

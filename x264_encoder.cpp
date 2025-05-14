@@ -248,6 +248,19 @@ void X264Encoder::SetupContext(bool p_IsFinalPass)
 		param.rc.i_vbv_max_bitrate = m_pSettings->GetBitRate();
 	}
 
+	const char* pLevel = m_pSettings->GetLevel();
+
+	g_Log(logLevelInfo, "X264 Plugin :: SetupContext :: applying level = %s", pLevel);
+
+	if (pLevel != nullptr) {
+		int resCode = x264_param_parse(&param, "level", pLevel);
+		if (resCode != 0) {
+			g_Log(logLevelError, "X264 Plugin :: SetupContext :: could not apply level = %s", pLevel);
+			m_Error = errFail;
+			return;
+		}
+	}
+
 	if (m_IsMultiPass) {
 
 		if (p_IsFinalPass && (m_PassesDone > 0)) {
@@ -255,10 +268,8 @@ void X264Encoder::SetupContext(bool p_IsFinalPass)
 			param.rc.b_stat_write = 0;
 			param.rc.psz_stat_in = &m_TmpFileName[0];
 			x264_param_apply_fastfirstpass(&param);
-
 			g_Log(logLevelInfo, "X264 Plugin :: SetupContext :: psz_stat_in = %s", param.rc.psz_stat_in);
 		} else if (!p_IsFinalPass) {
-
 			param.rc.b_stat_read = 0;
 			param.rc.b_stat_write = 1;
 			param.rc.psz_stat_out = &m_TmpFileName[0];
